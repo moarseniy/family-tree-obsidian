@@ -135,7 +135,7 @@ class FamilyTreeView extends ItemView {
       .force('charge', d3.forceManyBody().strength(-200))
       .force('x', d3.forceX(width/2).strength(0.1))
       .force('y', d3.forceY().y((d:any)=> (depth.get(d.id)||0)*100 ).strength(1))
-      .force('collide', d3.forceCollide().radius(30));
+      .force('collide', d3.forceCollide().radius(80));
 
     // Draw links
     const link = g.selectAll('line')
@@ -153,7 +153,14 @@ class FamilyTreeView extends ItemView {
       )
       .on('click',(_,d:any)=> this.openNote(d.id));
     node.append('circle').attr('r',12).attr('fill',d=>d.gender==='female'? '#ff6666':'#6699cc').attr('stroke','#444').attr('stroke-width',1.5);
-    node.append('text').attr('dy',-16).attr('text-anchor','middle').style('font-size','12px').text(d=>d.name);
+    node.append('text')
+      .attr('dy', 20) // вместо -16 — теперь под узлом
+      .attr('text-anchor', 'middle')
+      .style('font-size', '12px')
+      .style('fill', '#eee') // <- цвет текста
+      .style('pointer-events', 'none')
+      .text(d => d.name);
+
 
     sim.on('tick',()=>{
       link
