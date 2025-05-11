@@ -91,107 +91,74 @@ class FamilyTree:
             self.print_tree(child, level + 1, visited)
 
     def _calculate_positions(self):
-        """Иерархическое позиционирование с центрированием и предотвращением перекрытий"""
-        # Инициализация поколений и структуры данных
-        # self._calculate_generations()
-        generations = defaultdict(list)
-        for node in self.nodes.values():
-            if node.generation != -1:
-                generations[node.generation].append(node)
+        """Алгоритм позиционирования с резервной стратегией"""
         
         pos = {}
-        node_width = 0.2  # Ширина узла в относительных единицах
-        vertical_spacing = 1.5  # Вертикальное расстояние между поколениями
+        generation_map = defaultdict(list)
+        for node in self.nodes.values():
+            if node.generation != -1:
+                generation_map[node.generation].append(node)
         
-        # Рекурсивная функция для расчета позиций
-        def layout_children(parents, start_x, level):
-            if not parents:
-                return
-            
-            y = -level * vertical_spacing
-            children = []
-            parent_connections = defaultdict(list)
-            
-            # Собираем всех детей текущих родителей
-            for parent in parents:
-                for child in self.nodes.values():
-                    if (child.mother == parent or child.father == parent) and child.generation == level + 1:
-                        if child not in children:
-                            children.append(child)
-                        parent_connections[child].append(parent)
-            
-            # Группируем детей по общим родителям
-            groups = defaultdict(list)
-            for child in children:
-                key = tuple(sorted([p.id for p in parent_connections[child]]))
-                groups[key].append(child)
-            
-            # Распределяем группы детей
-            x = start_x
-            for group_key in sorted(groups.keys(), key=lambda k: np.mean([pos[p.id][0] for p in self._get_parents(k)])):
-                group_children = groups[group_key]
-                parents = self._get_parents(group_key)
-                
-                # Рассчитываем центр родителей
-                parent_centers = [pos[p.id][0] for p in parents if p.id in pos]
-                group_center = np.mean(parent_centers) if parent_centers else x
-                
-                # Вычисляем необходимую ширину для детей
-                required_width = len(group_children) * node_width
-                available_width = required_width * 1.2  # Добавляем 20% пространства
-                
-                # Распределяем детей
-                start_pos = group_center - available_width/2
-                for i, child in enumerate(group_children):
-                    child_x = start_pos + i*(available_width/len(group_children))
-                    pos[child.id] = (child_x, y)
-                    x = max(x, child_x + node_width)
-                
-                # Рекурсивно обрабатываем детей
-                x = layout_children(group_children, start_x, level + 1)
-            
-            return x
+        # Определение параметров сетки
+        max_gen = max(generation_map.keys(), default=1)
+        vertical_spacing = 1.0 / max(1, max_gen)
+        horizontal_spacing = 1.0
         
-        # Начинаем с корневых узлов (поколение 1)
-        roots = [node for node in generations.get(1, [])]
-        if not roots:
-            roots = [next(iter(self.nodes.values()))]
+        # Резервные позиции для узлов без родителей
+        reserve_x = 0
+        reserve_y = 0.5
         
-        # Первое поколение центрируем по горизонтали
-        root_y = 0.0
-        root_start = 0.5 - (len(roots)*node_width)/2
-        for i, root in enumerate(roots):
-            pos[root.id] = (root_start + i*node_width, root_y)
+        # Обработка каждого поколения
+        for gen in sorted(generation_map.keys()):
+            nodes = generation_map[gen]
+            y = 1.0 - gen * vertical_spacing
+            
+            # Группировка по наличию родителей
+            has_parents = []
+            no_parents = []
+            
+            for node in nodes:
+                if node.mother or node.father:
+                    has_parents.append(node)
+                else:
+                    no_parents.append(node)
+            
+            # Распределение узлов с родителями
+            if has_parents:
+                parent_groups = self._group_parents(has_parents, pos)
+                x_start = 0.1
+                for group in parent_groups:
+                    if group["parents"]:
+                        try:
+                            parent_x = np.nanmean([pos[p.id][0] for p in group["parents"]])
+                        except KeyError:
+                            parent_x = x_start
+                    else:
+                        parent_x = x_start
+                    
+                    num_children = len(group["children"])
+                    child_width = min(0.8, horizontal_spacing / num_children)
+                    
+                    for i, child in enumerate(group["children"]):
+                        x = parent_x - (num_children * child_width)/2 + i * child_width
+                        pos[child.id] = (x, y)
+                        x_start = x + child_width
+            
+            # Распределение узлов без родителей
+            if no_parents:
+                num_orphans = len(no_parents)
+                for i, node in enumerate(no_parents):
+                    x = reserve_x + i * 0.1
+                    pos[node.id] = (x, reserve_y)
+                reserve_x += num_orphans * 0.1 + 0.2
         
-        # Запускаем рекурсивное позиционирование
-        layout_children(roots, root_start, 1)
-        
-        # Центрирование всего дерева
-        self._center_positions(pos)
+        # Заполнение пропущенных позиций
+        for node in self.nodes.values():
+            if node.id not in pos:
+                pos[node.id] = (reserve_x, reserve_y)
+                reserve_x += 0.2
         
         return pos
-
-    def _get_parents(self, parent_ids):
-        """Возвращает объекты родителей по их ID"""
-        return [self.nodes[pid] for pid in parent_ids if pid in self.nodes]
-
-    def _center_positions(self, pos):
-        """Центрирует все позиции относительно центральной оси"""
-        if not pos:
-            return
-        
-        # Находим границы
-        min_x = min(x for x, y in pos.values())
-        max_x = max(x for x, y in pos.values())
-        
-        # Вычисляем смещение
-        center = (min_x + max_x) / 2
-        shift = 0.5 - center
-        
-        # Применяем смещение ко всем позициям
-        for node_id in pos:
-            x, y = pos[node_id]
-            pos[node_id] = (x + shift, y)
 
     def _draw_node(self, ax, x, y, node):
         """Отрисовка узла с проверкой перекрытий"""
@@ -360,19 +327,4 @@ def parse_md_files(directory: str) -> FamilyTree:
 # Пример использования
 if __name__ == "__main__":
     family_tree = parse_md_files("/home/arseniy/python-dev/family_tree/family")
-
-    # Печать дерева от корней
-    # for node in family_tree.nodes.values():
-    #     if node.generation == 1:
-    #         family_tree.print_tree(node)
-
     family_tree.visualize_with_matplotlib()
-
-    
-    # Поиск конкретного человека
-    # person = family_tree.nodes.get("Человек1")
-    # if person:
-    #     print(f"\nИнформация о {person.name}:")
-    #     print(f"Поколение: {person.generation}")
-    #     print(f"Мать: {person.mother.name if person.mother else 'Неизвестна'}")
-    #     print(f"Дети: {[child.name for child in person.children]}")
