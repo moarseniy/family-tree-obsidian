@@ -86,7 +86,6 @@ class FamilyTree:
             node.generation = generation_map.get(node.id, -1)
 
     def _calculate_positions(self):
-        """Новый алгоритм без нормализации"""
         pos = {}
         generation_map = defaultdict(list)
         
@@ -99,7 +98,7 @@ class FamilyTree:
         print(generation_map)
         max_gen = max(generation_map.keys(), default=0)
 
-        for gen in sorted(generation_map.keys()):
+        for gen in sorted(generation_map.keys(), reverse=True):
             y = (max_gen - gen) * self.gen_spacing
             print(f"{gen}:{y}")
             # Распределение узлов по X
@@ -107,9 +106,7 @@ class FamilyTree:
             for node in generation_map[gen]:
                 x_start += self.node_width# + self.horizontal_padding
                 pos[node.id] = (x_start, y)
-                if gen == 4:
-                    print(x_start)
-
+              
         return pos
 
     def visualize_with_matplotlib(self):
@@ -126,19 +123,6 @@ class FamilyTree:
                 valid_pos[node_id] = (x, y)
             else:
                 print(f"Filtered invalid position for node {node_id}")
-        
-        # Автомасштабирование с резервными значениями
-        # all_x = [x for x, _ in valid_pos.values()] or [0.5]
-        # all_y = [y for _, y in valid_pos.values()] or [0.5]
-        
-        # x_min, x_max = min(all_x), max(all_x)
-        # y_min, y_max = min(all_y), max(all_y)
-        
-        # x_range = x_max - x_min if x_max > x_min else 1.0
-        # y_range = y_max - y_min if y_max > y_min else 1.0
-        
-        # plt.xlim(x_min - 0.1*x_range, x_max + 0.1*x_range)
-        # plt.ylim(y_min - 0.1*y_range, y_max + 0.1*y_range)
         
         # Отрисовка связей
         for node in self.nodes.values():
