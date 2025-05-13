@@ -58,41 +58,54 @@ class FamilyTree:
                                 format: str = 'png',
                                 view: bool = True) -> graphviz.Digraph:
         """
-        Visualize the family tree using Graphviz, ensuring mother and father are adjacent.
-
-        Parameters:
-        - filename: output file name without extension
-        - format: output format (e.g., 'png', 'pdf', 'svg')
-        - view: whether to open the resulting file
+        Visualize the family tree using Graphviz. Mothers framed in red, fathers in blue, others in black.
+        Parents are placed adjacent.
         """
         dot = graphviz.Digraph(comment='FamilyTree', format=format)
         dot.attr('graph', rankdir='TB')  # Top to bottom layout
 
-        # Add all nodes
+        # Determine roles: who is mother or father of someone
+        is_mother = set()
+        is_father = set()
+        for node in self.nodes.values():
+            for child in node.children:
+                if child.mother is node:
+                    is_mother.add(node.id)
+                if child.father is node:
+                    is_father.add(node.id)
+
+        # Add all nodes with colored borders based on role
         for node in self.nodes.values():
             uid = node.id
             label = f"{node.name}\nGen {node.generation}"
-            dot.node(uid, label)
+            if uid in is_mother:
+                border_color = 'red'
+            elif uid in is_father:
+                border_color = 'blue'
+            else:
+                border_color = 'black'
+            dot.node(uid,
+                     label,
+                     color=border_color,
+                     fontcolor='black',
+                     style='rounded')
 
         # Group mother and father at same rank and add invisible edges for adjacency
         for child in self.nodes.values():
             m, f = child.mother, child.father
             if m and f:
-                # same rank
                 with dot.subgraph() as s:
                     s.attr(rank='same')
                     s.node(m.id)
                     s.node(f.id)
-                # invisible edge to force adjacency
                 dot.edge(m.id, f.id, style='invis')
 
         # Add edges parent -> child
         for node in self.nodes.values():
-            for parent, role in ((node.mother, 'mother'), (node.father, 'father')):
+            for parent in (node.mother, node.father):
                 if parent:
-                    dot.edge(parent.id, node.id, label=role)
+                    dot.edge(parent.id, node.id)
 
-        # Render and optionally view
         dot.render(filename, view=view)
         return dot
 
@@ -100,10 +113,6 @@ class FamilyTree:
 def parse_md_files(directory: str) -> FamilyTree:
     """
     Parse Markdown files in `directory` to build a FamilyTree.
-
-    Each file should have an ID as filename (without .md). In section '# Родители' lines:
-      - Мать: [[mother_id]]
-      - Отец: [[father_id]]
     """
     tree = FamilyTree()
     for md_file in Path(directory).glob("*.md"):
@@ -138,7 +147,7 @@ def parse_md_files(directory: str) -> FamilyTree:
 
 # Example usage
 if __name__ == '__main__':
-    directory = "/home/arseniy/python-dev/family_tree/family" #sys.argv[1]
+    directory = "/home/arseniy/Documents/Obsidian Vault/family" #sys.argv[1]
     tree = parse_md_files(directory)
     tree.visualize_with_graphviz(filename='my_family_tree')
 
