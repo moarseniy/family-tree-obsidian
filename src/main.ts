@@ -1,4 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting, WorkspaceLeaf, ItemView, Notice } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Setting, TFile, WorkspaceLeaf, ItemView, Notice } from 'obsidian';
 import panzoom from 'panzoom';
 
 interface MermaidViewSettings {
@@ -28,14 +28,17 @@ function hashCode(str: string): number {
  * Создаёт уникальный ID на основе имени и хеша
  */
 function createNodeId(name: string): string {
-    const base = name.trim()
-        .replace(/\s+/g, '_')
-        .replace(/[^a-zA-Z0-9_]/g, '');
+    // Кодируем спецсимволы кроме пробелов
+    const base = encodeURIComponent(name.trim())
+        .replace(/%20/g, '_')  // Заменяем пробелы на подчеркивания
+        .replace(/[^a-zA-Z0-9_]/g, '');  // Удаляем оставшиеся спецсимволы
+    
     return `${base}_${hashCode(name)}`;
 }
 
 class MermaidView extends ItemView {
     private mermaidContent: string;
+    private diagramId: string;
 
     constructor(leaf: WorkspaceLeaf, private settings: MermaidViewSettings) {
         super(leaf);
@@ -53,8 +56,6 @@ class MermaidView extends ItemView {
     private async drawMermaid(): Promise<void> {
         try {
             this.contentEl.empty();
-            console.log('Rendering Mermaid SVG');
-
             const mermaidDiv = this.contentEl.createDiv('mermaid-container');
             mermaidDiv.style.overflow = 'visible';
 
@@ -63,14 +64,14 @@ class MermaidView extends ItemView {
             mermaid.initialize({ startOnLoad: false, theme: 'default' });
 
             const id = `mermaid-${Date.now()}`;
+            this.diagramId = id;  // ← запоминаем container ID
             const { svg } = await mermaid.render(id, this.mermaidContent);
             mermaidDiv.innerHTML = svg;
 
+            this.addNodeClickHandlers(mermaidDiv);
+
             const svgEl = mermaidDiv.querySelector('svg');
             if (svgEl) {
-                const bbox = svgEl.getBBox();
-                mermaidDiv.style.width  = `${bbox.width}px`;
-                mermaidDiv.style.height = `${bbox.height}px`;
                 panzoom(svgEl, { bounds: false });
             }
         } catch (error) {
@@ -79,6 +80,40 @@ class MermaidView extends ItemView {
             throw error;
         }
     }
+
+    private addNodeClickHandlers(container: HTMLElement) {
+      container.querySelectorAll<SVGGElement>('g.node').forEach(node => {
+        node.style.cursor = 'pointer';
+
+        node.addEventListener('click', async () => {
+          // 1) Pull every bit of text inside this <g>
+          const rawName = (node.textContent || '').trim();
+          if (!rawName) {
+            new Notice('🛑 Empty label on node');
+            console.log('[Mermaid] Node innerHTML:', node.innerHTML);
+            return;
+          }
+
+          // 2) That rawName should exactly match your file’s basename
+          const noteName = rawName;
+
+          // 3) Find & open the file
+          const noteFile = this.app.vault
+            .getMarkdownFiles()
+            .find(f => f.basename === noteName);
+
+          if (noteFile) {
+            const leaf = this.app.workspace.getLeaf(true);
+            await leaf.openFile(noteFile);
+          } else {
+            new Notice(`Note "${noteName}" not found`);
+            console.log('[Mermaid] clicked node label:', noteName, 'but no file was found.');
+          }
+        });
+      });
+    }
+
+
 }
 
 export default class MermaidDiagramPlugin extends Plugin {
