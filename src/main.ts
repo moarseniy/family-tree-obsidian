@@ -2,13 +2,17 @@ import { App, Plugin, PluginSettingTab, Setting, TFile, WorkspaceLeaf, ItemView,
 import panzoom from 'panzoom';
 
 interface MermaidViewSettings {
-    defaultWidth: number;
-    defaultHeight: number;
+  defaultWidth: number;
+  defaultHeight: number;
+  nodeSpacing: number;
+  rankSpacing: number;
 }
 
 const DEFAULT_SETTINGS: MermaidViewSettings = {
-    defaultWidth: 800,
-    defaultHeight: 600
+  defaultWidth: 800,
+  defaultHeight: 600,
+  nodeSpacing: 140,
+  rankSpacing:  220
 };
 
 /**
@@ -62,6 +66,15 @@ class MermaidView extends ItemView {
             // @ts-ignore
             const { mermaid } = window;
             mermaid.initialize({ startOnLoad: false, theme: 'default' });
+
+            mermaid.initialize({
+              startOnLoad: false,
+              theme: 'default',
+              flowchart: {
+                nodeSpacing: this.settings.nodeSpacing, // ↑ horizontal spacing
+                rankSpacing:  this.settings.rankSpacing // ↑ vertical spacing
+              }
+            });
 
             const id = `mermaid-${Date.now()}`;
             this.diagramId = id;  // ← запоминаем container ID
@@ -234,5 +247,17 @@ class MermaidSettingsTab extends PluginSettingTab {
             .addText(text => text
                 .setValue(String(this.plugin.settings.defaultHeight))
                 .onChange(async (v) => { this.plugin.settings.defaultHeight = Number(v); await this.plugin.saveSettings(); }));
+        new Setting(containerEl)
+            .setName('Node Spacing')
+            .setDesc('Horizontal gap (px) between nodes')
+            .addText(text => text
+                .setValue(String(this.plugin.settings.nodeSpacing))
+                .onChange(async (v) => { this.plugin.settings.nodeSpacing = Number(v); await this.plugin.saveSettings(); }));
+        new Setting(containerEl)
+            .setName('Node Spacing')
+            .setDesc('Vertical gap (px) between ranks/rows')
+            .addText(text => text
+                .setValue(String(this.plugin.settings.rankSpacing))
+                .onChange(async (v) => { this.plugin.settings.rankSpacing = Number(v); await this.plugin.saveSettings(); }));            
     }
 }
