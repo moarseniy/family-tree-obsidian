@@ -53,7 +53,7 @@ class MermaidView extends ItemView {
 
     async setContent(content: string): Promise<void> {
         this.mermaidContent = content;
-        console.log('Mermaid content:', content);
+        // console.log('Mermaid content:', content);
         await this.drawMermaid();
     }
 
@@ -65,12 +65,13 @@ class MermaidView extends ItemView {
 
             // @ts-ignore
             const { mermaid } = window;
-            mermaid.initialize({ startOnLoad: false, theme: 'default' });
 
             mermaid.initialize({
               startOnLoad: false,
               theme: 'default',
+              securityLevel: 'loose',
               flowchart: {
+                htmlLabels:   true,
                 nodeSpacing: this.settings.nodeSpacing, // ↑ horizontal spacing
                 rankSpacing:  this.settings.rankSpacing // ↑ vertical spacing
               }
@@ -161,7 +162,7 @@ export default class MermaidDiagramPlugin extends Plugin {
     private async openMermaidView() {
         try {
             const diagram = await this.buildFamilyGraph();
-            console.log('Built diagram:', diagram);
+            // console.log('Built diagram:', diagram);
             if (!diagram) {
                 new Notice('No notes with # Родители found');
                 return;
@@ -184,8 +185,36 @@ export default class MermaidDiagramPlugin extends Plugin {
 
         for (const file of files) {
             const content = await this.app.vault.read(file);
+
             const parentsMatch = content.match(/^(#+)\s*Родители/m);
             if (!parentsMatch) continue;
+
+            let imageUrl: string | undefined;
+            let filename: string | undefined;
+
+            const imgRegex = /!\[\[(.+?\.(?:png|jpe?g|gif|svg|bmp|webp))\]\]/gi;
+            let match: RegExpExecArray | null;
+
+            while ((match = imgRegex.exec(content)) !== null) {
+              filename = match[1];
+              console.log('Found image filename:', filename);
+            }
+
+            if (filename) {
+              const imgFile = this.app.metadataCache.getFirstLinkpathDest(filename, file.path);
+              if (imgFile instanceof TFile) {
+                imageUrl = this.app.vault.getResourcePath(imgFile);
+                
+
+                // Добавляем хак для локальных URI
+                if (imageUrl.startsWith('app://')) {
+                    imageUrl = imageUrl.replace('app://local/', 'http://localhost/');
+                console.log('Resolved image URL:', imageUrl);
+            }
+              } else {
+                console.warn('Could not resolve TFile for', filename);
+              }
+            }
 
             const headingLevel = parentsMatch[1].length;
             const startIndex = content.indexOf(parentsMatch[0]) + parentsMatch[0].length;
@@ -193,8 +222,18 @@ export default class MermaidDiagramPlugin extends Plugin {
             const lines = section.split(/\r?\n/);
 
             const childName = file.basename;
-            const childId = createNodeId(childName);
-            nodes.add(`${childId}["${childName}"]`);
+            const childId = createNodeId(childName)
+            const label = imageUrl
+                ? `%%{html:true}%%<div style="text-align: center; margin: 0">
+                    <img src="${imageUrl}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 8px;"/>
+                    <br/>
+                    <span style="font-size: 12px">${childName}</span>
+                  </div>`
+                : childName;
+
+            console.log('Generated label:', label);
+
+            nodes.add(`${childId}["${label}"]`);
 
             for (const line of lines) {
                 if (new RegExp(`^#{${headingLevel}}\s+`).test(line) && !/^#+\s*Родители/.test(line)) {
