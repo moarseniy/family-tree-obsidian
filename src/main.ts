@@ -70,6 +70,7 @@ class MermaidView extends ItemView {
               startOnLoad: false,
               theme: 'default',
               securityLevel: 'loose',
+              maxTextSize: 100000,
               flowchart: {
                 htmlLabels:   true,
                 nodeSpacing: this.settings.nodeSpacing, // ↑ horizontal spacing
@@ -108,7 +109,7 @@ class MermaidView extends ItemView {
             return;
           }
 
-          // 2) That rawName should exactly match your file’s basename
+          // 2) That rawName should exactly match your file's basename
           const noteName = rawName;
 
           // 3) Find & open the file
@@ -127,7 +128,70 @@ class MermaidView extends ItemView {
       });
     }
 
+    private arrayBufferToBase64(buffer: ArrayBuffer): string {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+    }
 
+    private getMimeType(extension: string): string {
+        const map: Record<string, string> = {
+            'png': 'image/png',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'gif': 'image/gif',
+            'svg': 'image/svg+xml',
+            'webp': 'image/webp'
+        };
+        return map[extension.toLowerCase()] || 'application/octet-stream';
+    }
+
+    private async resizeImage(file: TFile, maxWidth: number, maxHeight: number): Promise<string> {
+        const arrayBuffer = await this.app.vault.readBinary(file);
+        const blob = new Blob([arrayBuffer]);
+        const url = URL.createObjectURL(blob);
+        
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                // Calculate new sizes with proportions
+                let width = img.width;
+                let height = img.height;
+                
+                if (width > height) {
+                    if (width > maxWidth) {
+                        height *= maxWidth / width;
+                        width = maxWidth;
+                    }
+                } else {
+                    if (height > maxHeight) {
+                        width *= maxHeight / height;
+                        height = maxHeight;
+                    }
+                }
+                
+                canvas.width = width;
+                canvas.height = height;
+                
+                ctx.drawImage(img, 0, 0, width, height);
+                
+                // Return compressed image in base format
+                resolve(canvas.toDataURL('image/jpeg', 0.7)); // 0.7 quality
+                
+                // Free URL
+                URL.revokeObjectURL(url);
+            };
+            
+            img.onerror = reject;
+            img.src = url;
+        });
+    }
 }
 
 export default class MermaidDiagramPlugin extends Plugin {
@@ -179,6 +243,28 @@ export default class MermaidDiagramPlugin extends Plugin {
     }
 
     private async buildFamilyGraph(): Promise<string> {
+        // Вспомогательные функции 
+        function arrayBufferToBase64(buffer: ArrayBuffer): string {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return window.btoa(binary);
+        }
+
+        function getMimeType(extension: string): string {
+            const map: Record<string, string> = {
+                'png': 'image/png',
+                'jpg': 'image/jpeg',
+                'jpeg': 'image/jpeg',
+                'gif': 'image/gif',
+                'svg': 'image/svg+xml',
+                'webp': 'image/webp'
+            };
+            return map[extension.toLowerCase()] || 'application/octet-stream';
+        }
+
         const files = this.app.vault.getMarkdownFiles();
         const nodes = new Set<string>();
         const links: string[] = [];
@@ -196,33 +282,62 @@ export default class MermaidDiagramPlugin extends Plugin {
             let match: RegExpExecArray | null;
 
             while ((match = imgRegex.exec(content)) !== null) {
-              filename = match[1];
-              console.log('Found image filename:', filename);
+                filename = match[1];
+                console.log('Found image filename:', filename);
             }
 
             if (filename) {
-              const imgFile = this.app.metadataCache.getFirstLinkpathDest(filename, file.path);
-              if (imgFile instanceof TFile) {
-                imageUrl = this.app.vault.getResourcePath(imgFile);
-                
-
-                // Добавляем хак для локальных URI
-                if (imageUrl.startsWith('app://')) {
-                    imageUrl = imageUrl.replace('app://local/', 'http://localhost/');
-                console.log('Resolved image URL:', imageUrl);
+                const imgFile = this.app.metadataCache.getFirstLinkpathDest(filename, file.path);
+                if (imgFile instanceof TFile) {
+                    try {
+                        const arrayBuffer = await this.app.vault.readBinary(imgFile);
+                        const blob = new Blob([arrayBuffer]);
+                        const url = URL.createObjectURL(blob);
+                        
+                        // Создаем очень маленькую миниатюру
+                        const dataUri = await new Promise<string>((resolve, reject) => {
+                            const img = new Image();
+                            img.onload = () => {
+                                const size = 256;
+                                
+                                const canvas = document.createElement('canvas');
+                                canvas.width = size;
+                                canvas.height = size;
+                                const ctx = canvas.getContext('2d');
+                                
+                                // Calculate quad zone for crop
+                                let sx = 0, sy = 0, sSize = img.width;
+                                if (img.width > img.height) {
+                                    sx = (img.width - img.height) / 2;
+                                    sSize = img.height;
+                                } else {
+                                    sy = (img.height - img.width) / 2;
+                                    sSize = img.width;
+                                }
+                                
+                                // draw crop in centre
+                                ctx.drawImage(img, sx, sy, sSize, sSize, 0, 0, size, size);
+                                
+                                // max compression
+                                resolve(canvas.toDataURL('image/jpeg', 0.5));
+                                URL.revokeObjectURL(url);
+                            };
+                            img.onerror = reject;
+                            img.src = url;
+                        });
+                        
+                        imageUrl = dataUri;
+                    } catch (err) {
+                        console.error('Error processing image:', err);
+                    }
+                } else {
+                    console.warn('Could not resolve TFile for', filename);
+                }
             }
-              } else {
-                console.warn('Could not resolve TFile for', filename);
-              }
-            }
-
-            const headingLevel = parentsMatch[1].length;
-            const startIndex = content.indexOf(parentsMatch[0]) + parentsMatch[0].length;
-            const section = content.slice(startIndex);
-            const lines = section.split(/\r?\n/);
 
             const childName = file.basename;
-            const childId = createNodeId(childName)
+            const childId = createNodeId(childName);
+
             const label = imageUrl
                 ? `%%{html:true}%%<div style="text-align: center; margin: 0">
                     <img src="${imageUrl}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 8px;"/>
@@ -232,8 +347,13 @@ export default class MermaidDiagramPlugin extends Plugin {
                 : childName;
 
             console.log('Generated label:', label);
-
+            
             nodes.add(`${childId}["${label}"]`);
+
+            const headingLevel = parentsMatch[1].length;
+            const startIndex = content.indexOf(parentsMatch[0]) + parentsMatch[0].length;
+            const section = content.slice(startIndex);
+            const lines = section.split(/\r?\n/);
 
             for (const line of lines) {
                 if (new RegExp(`^#{${headingLevel}}\s+`).test(line) && !/^#+\s*Родители/.test(line)) {
