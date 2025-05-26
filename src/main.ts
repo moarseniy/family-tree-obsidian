@@ -1,5 +1,6 @@
 import { App, Plugin, PluginSettingTab, Setting, TFile, WorkspaceLeaf, ItemView, Notice } from 'obsidian';
 import panzoom from 'panzoom';
+import mermaid from 'mermaid';
 
 interface MermaidViewSettings {
   defaultWidth: number;
@@ -243,7 +244,7 @@ export default class MermaidDiagramPlugin extends Plugin {
     }
 
     private async buildFamilyGraph(): Promise<string> {
-        // Вспомогательные функции 
+        // Вспомогательные функции без изменений
         function arrayBufferToBase64(buffer: ArrayBuffer): string {
             let binary = '';
             const bytes = new Uint8Array(buffer);
@@ -268,7 +269,17 @@ export default class MermaidDiagramPlugin extends Plugin {
         const files = this.app.vault.getMarkdownFiles();
         const nodes = new Set<string>();
         const links: string[] = [];
+        
+        // Словарь ключ-значение для обработанных файлов
+        type PersonInfo = {
+            id: string;
+            motherId?: string;
+            fatherId?: string;
+        };
+        
+        const people: PersonInfo[] = [];
 
+        // Первый проход - собираем все узлы и связи
         for (const file of files) {
             const content = await this.app.vault.read(file);
 
@@ -294,7 +305,6 @@ export default class MermaidDiagramPlugin extends Plugin {
                         const blob = new Blob([arrayBuffer]);
                         const url = URL.createObjectURL(blob);
                         
-                        // Создаем очень маленькую миниатюру
                         const dataUri = await new Promise<string>((resolve, reject) => {
                             const img = new Image();
                             img.onload = () => {
@@ -305,7 +315,6 @@ export default class MermaidDiagramPlugin extends Plugin {
                                 canvas.height = size;
                                 const ctx = canvas.getContext('2d');
                                 
-                                // Calculate quad zone for crop
                                 let sx = 0, sy = 0, sSize = img.width;
                                 if (img.width > img.height) {
                                     sx = (img.width - img.height) / 2;
@@ -315,10 +324,8 @@ export default class MermaidDiagramPlugin extends Plugin {
                                     sSize = img.width;
                                 }
                                 
-                                // draw crop in centre
                                 ctx.drawImage(img, sx, sy, sSize, sSize, 0, 0, size, size);
                                 
-                                // max compression
                                 resolve(canvas.toDataURL('image/jpeg', 0.5));
                                 URL.revokeObjectURL(url);
                             };
@@ -355,6 +362,9 @@ export default class MermaidDiagramPlugin extends Plugin {
             const section = content.slice(startIndex);
             const lines = section.split(/\r?\n/);
 
+            // Информация о текущем человеке
+            const person: PersonInfo = { id: childId };
+
             for (const line of lines) {
                 if (new RegExp(`^#{${headingLevel}}\s+`).test(line) && !/^#+\s*Родители/.test(line)) {
                     break;
@@ -362,17 +372,46 @@ export default class MermaidDiagramPlugin extends Plugin {
 
                 const motherMatch = line.match(/^\s*-\s*Мать\s*:\s*\[\[([^\]]+)\]\]/i);
                 const fatherMatch = line.match(/^\s*-\s*Отец\s*:\s*\[\[([^\]]+)\]\]/i);
+                
                 if (motherMatch) {
-                    const parentName = motherMatch[1];
-                    const parentId = createNodeId(parentName);
-                    nodes.add(`${parentId}["${parentName}"]`);
-                    links.push(`${parentId} --> ${childId}`);
+                    const motherName = motherMatch[1];
+                    const motherId = createNodeId(motherName);
+                    nodes.add(`${motherId}["${motherName}"]`);
+                    person.motherId = motherId;
                 }
+                
                 if (fatherMatch) {
-                    const parentName = fatherMatch[1];
-                    const parentId = createNodeId(parentName);
-                    nodes.add(`${parentId}["${parentName}"]`);
-                    links.push(`${parentId} --> ${childId}`);
+                    const fatherName = fatherMatch[1];
+                    const fatherId = createNodeId(fatherName);
+                    nodes.add(`${fatherId}["${fatherName}"]`);
+                    person.fatherId = fatherId;
+                }
+            }
+
+            people.push(person);
+        }
+
+        // Второй проход - создаем связи
+        for (const person of people) {
+            // Если есть оба родителя, создаем промежуточную точку
+            if (person.motherId && person.fatherId) {
+                // Добавляем точку по середине между родителями
+                const midpointId = `mid_${person.id}`;
+                nodes.add(`${midpointId}((.))`);
+                
+                // Связываем родителей с этой точкой
+                links.push(`${person.motherId} --> ${midpointId}`);
+                links.push(`${person.fatherId} --> ${midpointId}`);
+                
+                // А эту точку с ребенком
+                links.push(`${midpointId} --> ${person.id}`);
+            } else {
+                // Если только один родитель, связываем напрямую
+                if (person.motherId) {
+                    links.push(`${person.motherId} --> ${person.id}`);
+                }
+                if (person.fatherId) {
+                    links.push(`${person.fatherId} --> ${person.id}`);
                 }
             }
         }
@@ -380,7 +419,10 @@ export default class MermaidDiagramPlugin extends Plugin {
         if (nodes.size === 0) {
             return '';
         }
+
+        // Формируем диаграмму
         const diagram: string[] = ['flowchart TD', ...Array.from(nodes), ...links];
+        
         return diagram.join('\n');
     }
 
