@@ -3,11 +3,7 @@
   "name": "Family Tree Plugin",
   "description": "A plugin that automatically generates an interactive family tree from your Obsidian notes. Simply create notes with parent links in YAML frontmatter, and the plugin visualizes relationships as an inverted tree (you at the base).",
   "author": "Arseniy Mokin",
-
-  "authorUrl": "https://www.linkedin.com/in/arseniy-mokin-610b9b203/",
-  "dependencies": {
-    "mermaid": "10.4.0"
-  },
+  "authorUrl": "https://www.linkedin.com/in/arseniy-mokin/",
   "minAppVersion": "0.11.0",
   "version": "0.0.1"
 }

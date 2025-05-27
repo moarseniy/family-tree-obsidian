@@ -50,7 +50,7 @@ class MermaidView extends ItemView {
     }
 
     getViewType(): string { return 'mermaid-view'; }
-    getDisplayText(): string { return 'Mermaid Diagram (v3)'; }
+    getDisplayText(): string { return 'Family Tree'; }
 
     async setContent(content: string): Promise<void> {
         this.mermaidContent = content;
@@ -62,10 +62,15 @@ class MermaidView extends ItemView {
         try {
             this.contentEl.empty();
             const mermaidDiv = this.contentEl.createDiv('mermaid-container');
-            mermaidDiv.style.overflow = 'visible';
+            mermaidDiv.style.position = 'relative';
+            mermaidDiv.style.width = `${this.settings.defaultWidth}px`;
+            mermaidDiv.style.height = `${this.settings.defaultHeight}px`;
 
-            // @ts-ignore
-            const { mermaid } = window;
+            const mermaid = window.mermaid;
+            if (!mermaid) {
+                this.contentEl.setText('Mermaid library not loaded');
+                return;
+            }
 
             mermaid.initialize({
               startOnLoad: false,
@@ -85,16 +90,25 @@ class MermaidView extends ItemView {
             mermaidDiv.innerHTML = svg;
 
             this.addNodeClickHandlers(mermaidDiv);
-
-            const svgEl = mermaidDiv.querySelector('svg');
-            if (svgEl) {
-                panzoom(svgEl, { bounds: false });
-            }
+            this.initPanZoom(mermaidDiv.querySelector('svg') as SVGSVGElement);
+            
         } catch (error) {
             console.error('Render error:', error);
             this.contentEl.setText(`Error: ${error.message}`);
             throw error;
         }
+    }
+
+    private initPanZoom(svgEl: SVGSVGElement) {
+        if (!svgEl) return;
+        // Инициализация panzoom с поддержкой колеса и перетаскивания
+        panzoom(svgEl, {
+          bounds: true,
+          boundsPadding: 0.1,
+          maxZoom: 5,
+          minZoom: 0.2,
+          zoomDoubleClickSpeed: 1
+        });
     }
 
     private addNodeClickHandlers(container: HTMLElement) {
@@ -127,27 +141,6 @@ class MermaidView extends ItemView {
           }
         });
       });
-    }
-
-    private arrayBufferToBase64(buffer: ArrayBuffer): string {
-        let binary = '';
-        const bytes = new Uint8Array(buffer);
-        for (let i = 0; i < bytes.byteLength; i++) {
-            binary += String.fromCharCode(bytes[i]);
-        }
-        return window.btoa(binary);
-    }
-
-    private getMimeType(extension: string): string {
-        const map: Record<string, string> = {
-            'png': 'image/png',
-            'jpg': 'image/jpeg',
-            'jpeg': 'image/jpeg',
-            'gif': 'image/gif',
-            'svg': 'image/svg+xml',
-            'webp': 'image/webp'
-        };
-        return map[extension.toLowerCase()] || 'application/octet-stream';
     }
 
     private async resizeImage(file: TFile, maxWidth: number, maxHeight: number): Promise<string> {
@@ -200,10 +193,9 @@ export default class MermaidDiagramPlugin extends Plugin {
 
     private async loadMermaid() {
         try {
-            // @ts-ignore
-            if (!window.mermaid) {
-                // @ts-ignore
-                window.mermaid = await import('mermaid');
+            if (!window.mermaid || typeof window.mermaid.initialize !== 'function') {
+                console.error("Mermaid not properly initialized");
+                return false;
             }
             return true;
         } catch (e) {
