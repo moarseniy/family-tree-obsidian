@@ -66,24 +66,6 @@ class MermaidView extends ItemView {
             mermaidDiv.style.width = `${this.settings.defaultWidth}px`;
             mermaidDiv.style.height = `${this.settings.defaultHeight}px`;
 
-            const mermaid = window.mermaid;
-            if (!mermaid) {
-                this.contentEl.setText('Mermaid library not loaded');
-                return;
-            }
-
-            mermaid.initialize({
-              startOnLoad: false,
-              theme: 'default',
-              securityLevel: 'loose',
-              maxTextSize: 100000,
-              flowchart: {
-                htmlLabels:   true,
-                nodeSpacing: this.settings.nodeSpacing, // ↑ horizontal spacing
-                rankSpacing:  this.settings.rankSpacing // ↑ vertical spacing
-              }
-            });
-
             const id = `mermaid-${Date.now()}`;
             this.diagramId = id;  // ← запоминаем container ID
             const { svg } = await mermaid.render(id, this.mermaidContent);
@@ -193,7 +175,25 @@ export default class MermaidDiagramPlugin extends Plugin {
 
     private async loadMermaid() {
         try {
-            if (!window.mermaid || typeof window.mermaid.initialize !== 'function') {
+            // const mermaid = window.mermaid;
+            if (!mermaid) {
+                console.error('Mermaid library not loaded');
+                return false;
+            }
+
+            mermaid.initialize({
+              startOnLoad: false,
+              theme: 'default',
+              securityLevel: 'loose',
+              maxTextSize: 100000,
+              flowchart: {
+                htmlLabels:   true,
+                nodeSpacing: this.settings.nodeSpacing, // ↑ horizontal spacing
+                rankSpacing:  this.settings.rankSpacing // ↑ vertical spacing
+              }
+            });
+
+            if (!mermaid || typeof mermaid.initialize !== 'function') {
                 console.error("Mermaid not properly initialized");
                 return false;
             }

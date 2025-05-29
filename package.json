@@ -5,18 +5,16 @@
   "main": "lib/main.js",
   "license": "MIT",
   "scripts": {
-    "build": "node esbuild.config.js",
-    "dev": "node esbuild.config.js --watch"
+    "build": "esbuild src/main.ts --bundle --platform=node --external:obsidian --target=es2019 --outfile=main.js"
   },
   "devDependencies": {
+    "esbuild": "^0.18.0",
+    "typescript": "^4.9.0",
     "obsidian": "obsidianmd/obsidian-api",
-    "obsidian-plugin-cli": "^0.4.5",
-    "typescript": "^4.1.5"
+    "obsidian-plugin-cli": "^0.4.5"
   },
   "dependencies": {
-    "@types/d3": "^7.4.3",
-    "d3": "^7.9.0",
-    "mermaid": "10.6.1",
+    "mermaid": "^10.0.0",
     "panzoom": "^9.4.3"
   }
 }
